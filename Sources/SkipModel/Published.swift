@@ -1,5 +1,4 @@
 // Copyright 2023–2026 Skip
-// SPDX-License-Identifier: MPL-2.0
 #if SKIP
 
 import androidx.compose.runtime.MutableState
@@ -9,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 public final class Published<Value>: StateTracker {
     private let subject: PropertySubject<Value, Never>
     private var state: MutableState<Value>?
+    private var lastWriteTransaction: StateMutationTransaction?
 
     public init(wrappedValue: Value) {
         subject = PropertySubject(initialValue: wrappedValue)
@@ -18,12 +18,21 @@ public final class Published<Value>: StateTracker {
     public var wrappedValue: Value {
         get {
             if let state {
+                // Skip recordRead unless we actually have a tx to publish — saves a ThreadLocal
+                // hit on every plain read.
+                if let tx = lastWriteTransaction {
+                    StateTracking.recordRead(tx)
+                }
                 return state.value
             } else {
                 return subject.current
             }
         }
         set {
+            let tx = StateTracking.currentTransaction
+            if tx != nil || lastWriteTransaction != nil {
+                lastWriteTransaction = tx
+            }
             subject.send(newValue)
             state?.value = newValue
         }
